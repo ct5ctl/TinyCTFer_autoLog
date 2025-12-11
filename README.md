@@ -1,3 +1,5 @@
+[![badge](./README/badge.png)](https://zc.tencent.com/competition/competitionHackathon?code=cha004)
+
 ## 介绍
 
 腾讯云黑客松-智能渗透挑战赛 **第 4 名** 核心代码。
