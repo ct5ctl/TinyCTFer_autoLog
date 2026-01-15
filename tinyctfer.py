@@ -27,6 +27,7 @@ from docker.errors import ImageNotFound
 
 # Script directory for mounting claude_code configuration into container
 SCRIPT_DIR = Path(__file__).resolve().parent
+print(SCRIPT_DIR)
 
 class Ctfer:
     """CTF Solver Runtime - Provide AI maximum freedom within safe container boundary"""
@@ -35,7 +36,8 @@ class Ctfer:
         self.image = "l3yx/sandbox:latest"
         self.volumes = [
             f"{SCRIPT_DIR/'claude_code'}:/opt/claude_code:ro",  # Claude config (ro)
-            f"{workspace}:/home/ubuntu/Workspace"  # AI's workspace (rw)
+            f"{workspace}:/home/ubuntu/Workspace",  # AI's workspace (rw)
+            f"{SCRIPT_DIR}/entrypoint.sh:/entrypoint.sh:ro",  # Claude config (ro)
         ]
         self.environment = {  # Anthropic API credentials
             "ANTHROPIC_BASE_URL": os.getenv("ANTHROPIC_BASE_URL"),
@@ -53,8 +55,10 @@ class Ctfer:
             exit(1)
         self.container:Container = self.docker_client.containers.run(
             image=self.image, volumes=self.volumes, environment=self.environment,
-            ports=self.ports, detach=True, remove=True
+            ports=self.ports, detach=True, remove=False,
         )
+        check = self.container.exec_run("bash -c 'id && pwd'")
+        print(check.output)
 
     def cleanup(self):
         if self.container:
@@ -94,6 +98,9 @@ if __name__ == "__main__":
     print("[+] mcp服务已就绪...")
     print(f"[+] 可以连接 vnc://127.0.0.1:{vnc_port} 查看可视化界面, 密码123456")
     print(f"[+] 开始解题, 可以打开 {workspace} 查看解题步骤")
+    print(f"[+] 输入提示词：{task}")
+    print(ctfer.container.logs().decode('utf-8'))
+    #res = ctfer.container.exec_run(["claude", "--dangerously-skip-permissions", "--print", task], workdir="/home/ubuntu/Workspace")
     res = ctfer.container.exec_run(["claude", "--dangerously-skip-permissions", "--print", task], workdir="/opt/claude_code")
     ctfer.cleanup()
     print("[+] 结束运行")
