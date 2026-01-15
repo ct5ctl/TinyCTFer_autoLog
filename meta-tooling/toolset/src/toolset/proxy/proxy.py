@@ -8,6 +8,7 @@ from core import tool, toolset, namespace
 
 namespace()
 
+
 @toolset()
 class Proxy:
     def __init__(self, url: str, token: str):
@@ -52,7 +53,12 @@ class Proxy:
         else:
             filter = "preset:no-images and preset:no-styling"
         result = self.__client.execute(query, variable_values={"limit": limit, "offset": offset, "filter": filter})
-        return result['interceptEntriesByOffset']
+        data = result['interceptEntriesByOffset']
+        try:
+            toolset.logger.log_observation(data, "http_traffic")
+        except Exception:
+            pass
+        return data
     
     @tool()
     def view_traffic(self, id: int, b64encode: Annotated[str, "whether the returned traffic needs to be base64 encoded. Generally, not required, so you can view the results directly"]=False) -> dict:
@@ -76,6 +82,10 @@ class Proxy:
             result['request']['raw'] = base64.b64decode(result['request']['raw']).decode('utf-8', errors='replace')
             if result['request']['response'] and 'raw' in result['request']['response']:
                 result['request']['response']['raw'] = base64.b64decode(result['request']['response']['raw']).decode('utf-8', errors='replace')
+        try:
+            toolset.logger.log_observation(result, "http_traffic")
+        except Exception:
+            pass
         return result
 
 

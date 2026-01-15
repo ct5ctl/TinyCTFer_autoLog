@@ -6,6 +6,7 @@ from core import tool, toolset, namespace
 
 namespace()
 
+
 @toolset()
 class Browser:
     def __init__(self, url):
@@ -54,9 +55,22 @@ class Browser:
 
         contexts = self.browser_instance.contexts
         if contexts:
-            return contexts[0]
+            ctx = contexts[0]
         else:
-            return await self.browser_instance.new_context()
+            ctx = await self.browser_instance.new_context()
+
+        # Log basic page sources as webpage_source when available
+        try:
+            for page in ctx.pages:
+                try:
+                    content = await page.content()
+                    toolset.logger.log_observation(content, "webpage_source")
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        return ctx
 
    
 

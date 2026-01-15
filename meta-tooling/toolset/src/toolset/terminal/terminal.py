@@ -9,6 +9,7 @@ from core import tool, toolset, namespace
 
 namespace()
 
+
 @toolset()
 class Terminal:
     def __init__(self):
@@ -58,9 +59,19 @@ class Terminal:
         session_ids = [session.session_id.replace('$', '') for session in self.server.sessions]
         sessions = self.server.sessions.filter(session_id=f"${session_id}")
         if not sessions:
-            return f"No session found with id: {session_id}. Here are session ids: {', '.join(session_ids)}"
+            output = f"No session found with id: {session_id}. Here are session ids: {', '.join(session_ids)}"
+            try:
+                toolset.logger.log_observation(output, "terminal")
+            except Exception:
+                pass
+            return output
         session = sessions[0]
-        return '\n'.join(session.windows[0].panes[0].capture_pane(start, end))
+        output = '\n'.join(session.windows[0].panes[0].capture_pane(start, end))
+        try:
+            toolset.logger.log_observation(output, "terminal")
+        except Exception:
+            pass
+        return output
 
     @tool()
     def send_keys(self, session_id: int, keys: Annotated[str,"Text or input into terminal window"], enter: Annotated[bool,"Send enter after sending the input."]) -> str:
@@ -104,5 +115,10 @@ class Terminal:
         session = sessions[0]
         session.windows[0].panes[0].send_keys(keys, enter=enter)
         time.sleep(1)
-        return '\n'.join(session.windows[0].panes[0].capture_pane())
+        output = '\n'.join(session.windows[0].panes[0].capture_pane())
+        try:
+            toolset.logger.log_observation(output, "terminal")
+        except Exception:
+            pass
+        return output
 

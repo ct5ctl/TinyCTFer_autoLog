@@ -9,6 +9,12 @@ from jupyter_client import KernelManager
 from nbformat import v4 as nbf
 from fastmcp import FastMCP
 
+# toolset is available inside the sandbox; logger integration
+try:
+    import toolset  # type: ignore
+except Exception:  # pragma: no cover - defensive import
+    toolset = None
+
 class PythonExecutor:
     def __init__(self, path="scripts"):
         self.path = path
@@ -89,10 +95,18 @@ class PythonExecutor:
         return list(self.sessions.keys())
 
     def execute_code(self, session_name, code, timeout=10):
+        # Log full code for this step (if logger is available)
+        if toolset is not None and getattr(toolset, "logger", None) is not None:
+            try:
+                toolset.logger.log_code(code)
+            except Exception:
+                # logging should never break execution
+                pass
+
         if session_name not in self.sessions:
             self._create_session(session_name)
-        
-        session = self.sessions[session_name]        
+
+        session = self.sessions[session_name]
         client = session['client']
         km = session['km']
         notebook = session['notebook']
@@ -106,7 +120,7 @@ class PythonExecutor:
             nbformat.write(notebook, f)
 
         msg_id = client.execute(code)
-        
+
         output_objects = []
         start_time = time.time()
 
@@ -174,7 +188,12 @@ class PythonExecutor:
                     
         except Exception as e:
             error_msg = f"Failed to execute code or retrieve output: {repr(e)}"
-            output_objects.append(nbf.new_output('display_data', data={'text/plain': f'[SYSTEM] {error_msg}'}))
+            output_objects.append(
+                nbf.new_output(
+                    "display_data",
+                    data={"text/plain": f"[SYSTEM] {error_msg}"},
+                )
+            )
 
         cell.outputs = output_objects if output_objects else []
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -182,7 +201,35 @@ class PythonExecutor:
 
         session['execution_count'] += 1
 
-        return self._format_output(output_objects)
+        formatted = self._format_output(output_objects)
+
+        # Log observations: classify normal output vs error
+        if toolset is not None and getattr(toolset, "logger", None) is not None:
+            try:
+                for item in formatted:
+                    obs_type = "code_output"
+                    if item.get("type") == "error":
+                        obs_type = "error"
+
+                    # Optional planning extraction heuristic:
+                    # if a plain-text stream starts with something like 'Plan:' or 'Planning:',
+                    # treat it as high-level planning and log via log_planning as well.
+                    if (
+                        item.get("type") == "stream"
+                        and isinstance(item.get("text"), str)
+                    ):
+                        text = item["text"].lstrip()
+                        if text.lower().startswith(("plan:", "planning:")):
+                            try:
+                                toolset.logger_tools.log_planning(text)
+                            except Exception:
+                                pass
+
+                    toolset.logger.log_observation(item, obs_type)
+            except Exception:
+                pass
+
+        return formatted
 
     def close_session(self, session_name):
         if session_name not in self.sessions:

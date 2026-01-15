@@ -43,7 +43,9 @@ class Ctfer:
             "ANTHROPIC_BASE_URL": os.getenv("ANTHROPIC_BASE_URL"),
             "ANTHROPIC_AUTH_TOKEN": os.getenv("ANTHROPIC_AUTH_TOKEN"),
             "ANTHROPIC_MODEL": os.getenv("ANTHROPIC_MODEL"),
-            "NO_CODESERVER": "true"
+            "NO_CODESERVER": "true",
+            # hint for logger where workspace lives (inside container)
+            "WORKSPACE_DIR": "/home/ubuntu/Workspace",
         }
         self.ports = {f"{vnc_port}":"5901"}  # VNC for human observation
         self.docker_client = docker.DockerClient()
@@ -99,9 +101,22 @@ if __name__ == "__main__":
     print(f"[+] 可以连接 vnc://127.0.0.1:{vnc_port} 查看可视化界面, 密码123456")
     print(f"[+] 开始解题, 可以打开 {workspace} 查看解题步骤")
     print(f"[+] 输入提示词：{task}")
+
+    # Initialize structured log inside sandbox before starting Claude
+    init_script = f"""
+import toolset
+toolset.logger.set_initial_prompt({task!r})
+"""
+    ctfer.container.exec_run(
+        ["python", "-c", init_script],
+        workdir="/home/ubuntu/Workspace",
+    )
+
     print(ctfer.container.logs().decode('utf-8'))
     #res = ctfer.container.exec_run(["claude", "--dangerously-skip-permissions", "--print", task], workdir="/home/ubuntu/Workspace")
     res = ctfer.container.exec_run(["claude", "--dangerously-skip-permissions", "--print", task], workdir="/opt/claude_code")
+
+    # Best-effort: let agent log final report via logger tools; nothing to do here explicitly
     ctfer.cleanup()
     print("[+] 结束运行")
     print(bytes.decode(res.output))
