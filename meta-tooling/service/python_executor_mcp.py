@@ -95,31 +95,42 @@ class PythonExecutor:
         return list(self.sessions.keys())
 
     def execute_code(self, session_name, code, timeout=10):
-        # Log full code for this step (if logger is available)
-        if toolset is not None and getattr(toolset, "logger", None) is not None:
-            try:
-                toolset.logger.log_code(code)
-            except Exception:
-                # logging should never break execution
-                pass
-
         if session_name not in self.sessions:
             self._create_session(session_name)
-
-        session = self.sessions[session_name]
+        
+        session = self.sessions[session_name]        
         client = session['client']
         km = session['km']
         notebook = session['notebook']
         filepath = session['filepath']
         exec_count = session['execution_count']
 
-        cell = nbf.new_code_cell(code, execution_count=exec_count)
+        # Inject logging code that runs inside the container's Python environment
+        # This code will execute in the Jupyter kernel, where toolset is available
+        import json
+        code_escaped = json.dumps(code)
+        log_code_injection = f"""
+# Auto-injected logging code (runs in container's Python environment)
+try:
+    import toolset
+    if hasattr(toolset, 'logger'):
+        import json
+        code_to_log = json.loads({json.dumps(code_escaped)})
+        toolset.logger.log_code(code_to_log)
+except Exception:
+    pass  # Logger not available or failed, continue anyway
+
+"""
+        # Prepend logging injection to user code
+        code_with_logging = log_code_injection + code
+
+        cell = nbf.new_code_cell(code_with_logging, execution_count=exec_count)
         cell.outputs = []
         notebook.cells.append(cell)
         with open(filepath, 'w', encoding='utf-8') as f:
             nbformat.write(notebook, f)
 
-        msg_id = client.execute(code)
+        msg_id = client.execute(code_with_logging)
 
         output_objects = []
         start_time = time.time()
@@ -203,31 +214,56 @@ class PythonExecutor:
 
         formatted = self._format_output(output_objects)
 
-        # Log observations: classify normal output vs error
-        if toolset is not None and getattr(toolset, "logger", None) is not None:
+        # Log observations in the container's Python environment
+        # Inject code that will run after execution to log observations
+        if formatted:
             try:
-                for item in formatted:
-                    obs_type = "code_output"
-                    if item.get("type") == "error":
-                        obs_type = "error"
-
-                    # Optional planning extraction heuristic:
-                    # if a plain-text stream starts with something like 'Plan:' or 'Planning:',
-                    # treat it as high-level planning and log via log_planning as well.
-                    if (
-                        item.get("type") == "stream"
-                        and isinstance(item.get("text"), str)
-                    ):
-                        text = item["text"].lstrip()
-                        if text.lower().startswith(("plan:", "planning:")):
-                            try:
-                                toolset.logger_tools.log_planning(text)
-                            except Exception:
-                                pass
-
-                    toolset.logger.log_observation(item, obs_type)
+                import json
+                observations_json_str = json.dumps(formatted)
+                # Escape the JSON string for embedding in Python code
+                observations_json_escaped = json.dumps(observations_json_str)
+                
+                log_observations_code = f"""
+# Auto-injected observation logging (runs in container's Python environment)
+try:
+    import toolset
+    import json
+    observations_json = json.loads({observations_json_escaped})
+    observations = json.loads(observations_json)
+    for item in observations:
+        obs_type = "code_output"
+        if item.get("type") == "error":
+            obs_type = "error"
+        
+        # Optional planning extraction
+        if (
+            item.get("type") == "stream"
+            and isinstance(item.get("text"), str)
+        ):
+            text = item["text"].lstrip()
+            if text.lower().startswith(("plan:", "planning:")):
+                try:
+                    if hasattr(toolset, 'logger_tools'):
+                        toolset.logger_tools.log_planning(text)
+                except Exception:
+                    pass
+        
+        # Log observation
+        if hasattr(toolset, 'logger'):
+            toolset.logger.log_observation(item, obs_type)
+except Exception:
+    pass  # Logger not available, continue anyway
+"""
+                # Execute observation logging in the same session (fire and forget)
+                try:
+                    # Execute asynchronously without waiting for completion
+                    client.execute(log_observations_code)
+                    # Give a tiny bit of time for async execution
+                    time.sleep(0.05)
+                except Exception:
+                    pass  # Don't break execution if logging fails
             except Exception:
-                pass
+                pass  # Don't break execution if observation logging setup fails
 
         return formatted
 
