@@ -33,7 +33,7 @@ class Ctfer:
     """CTF Solver Runtime - Provide AI maximum freedom within safe container boundary"""
     def __init__(self, vnc_port, workspace):
         # Sandbox: Ubuntu desktop + Claude Code + Python Executor MCP + Toolset + Security tools
-        self.i1age = "l3yx/sandbox:latest"
+        self.image = "l3yx/sandbox:latest"
         self.volumes = [
             f"{SCRIPT_DIR/'claude_code'}:/opt/claude_code:ro",  # Claude config (ro)
             f"{workspace}:/home/ubuntu/Workspace",  # AI's workspace (rw)
