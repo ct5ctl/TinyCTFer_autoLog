@@ -33,7 +33,7 @@ class Ctfer:
     """CTF Solver Runtime - Provide AI maximum freedom within safe container boundary"""
     def __init__(self, vnc_port, workspace):
         # Sandbox: Ubuntu desktop + Claude Code + Python Executor MCP + Toolset + Security tools
-        self.image = "l3yx/sandbox:latest"
+        self.i1age = "l3yx/sandbox:latest"
         self.volumes = [
             f"{SCRIPT_DIR/'claude_code'}:/opt/claude_code:ro",  # Claude config (ro)
             f"{workspace}:/home/ubuntu/Workspace",  # AI's workspace (rw)
@@ -64,6 +64,10 @@ class Ctfer:
         except Exception as e:
             print(f"[-] Failed to access Docker: {e}")
             raise
+        
+        # Check and clean up containers using the same port
+        self._cleanup_port_conflicts(vnc_port)
+        
         try:
             self.container:Container = self.docker_client.containers.run(
                 image=self.image, volumes=self.volumes, environment=self.environment,
@@ -72,8 +76,52 @@ class Ctfer:
             check = self.container.exec_run("bash -c 'id && pwd'")
             print(check.output)
         except Exception as e:
-            print(f"[-] Failed to start container: {e}")
-            raise
+            error_msg = str(e)
+            if "port is already allocated" in error_msg or "address already in use" in error_msg.lower():
+                print(f"[!] Port {vnc_port} is already in use. Attempting to clean up conflicting containers...")
+                self._cleanup_port_conflicts(vnc_port, force=True)
+                # Retry once after cleanup
+                try:
+                    self.container:Container = self.docker_client.containers.run(
+                        image=self.image, volumes=self.volumes, environment=self.environment,
+                        ports=self.ports, detach=True, remove=False,
+                    )
+                    check = self.container.exec_run("bash -c 'id && pwd'")
+                    print(check.output)
+                    print(f"[+] Container started successfully after cleanup")
+                except Exception as retry_e:
+                    print(f"[-] Failed to start container after cleanup: {retry_e}")
+                    print(f"[-] Please manually stop the container using port {vnc_port} or use a different --vnc-port")
+                    print(f"[-] You can check with: docker ps | grep :{vnc_port}")
+                    raise
+            else:
+                print(f"[-] Failed to start container: {e}")
+                raise
+    
+    def _cleanup_port_conflicts(self, port, force=False):
+        """Stop containers that are using the specified port."""
+        try:
+            containers = self.docker_client.containers.list(all=True)
+            for container in containers:
+                try:
+                    port_mappings = container.attrs.get('NetworkSettings', {}).get('Ports', {})
+                    for container_port, host_bindings in port_mappings.items():
+                        if host_bindings:
+                            for binding in host_bindings:
+                                if binding.get('HostPort') == str(port):
+                                    print(f"[!] Found container {container.id[:12]} using port {port}")
+                                    if force:
+                                        print(f"[!] Stopping container {container.id[:12]}...")
+                                        container.stop(timeout=5)
+                                        container.remove()
+                                        print(f"[+] Container {container.id[:12]} stopped and removed")
+                                    return
+                except Exception:
+                    # Skip containers that can't be inspected
+                    continue
+        except Exception as e:
+            if force:
+                print(f"[!] Warning: Could not check for port conflicts: {e}")
 
     def cleanup(self):
         if hasattr(self, 'container') and self.container:
