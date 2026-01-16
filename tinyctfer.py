@@ -48,29 +48,45 @@ class Ctfer:
             "WORKSPACE_DIR": "/home/ubuntu/Workspace",
         }
         self.ports = {f"{vnc_port}":"5901"}  # VNC for human observation
-        self.docker_client = docker.DockerClient()
+        try:
+            self.docker_client = docker.DockerClient()
+        except Exception as e:
+            print(f"[-] Failed to connect to Docker: {e}")
+            print("[-] Please ensure Docker is running and you have permission to access it.")
+            print("[-] Try: sudo usermod -aG docker $USER (then log out and back in)")
+            raise
         self.container = None
         try:
             self.docker_client.images.get(self.image)
         except ImageNotFound:
             print(f"[-] Docker image '{self.image}' not found. Please pull it first.")
             exit(1)
-        self.container:Container = self.docker_client.containers.run(
-            image=self.image, volumes=self.volumes, environment=self.environment,
-            ports=self.ports, detach=True, remove=False,
-        )
-        check = self.container.exec_run("bash -c 'id && pwd'")
-        print(check.output)
+        except Exception as e:
+            print(f"[-] Failed to access Docker: {e}")
+            raise
+        try:
+            self.container:Container = self.docker_client.containers.run(
+                image=self.image, volumes=self.volumes, environment=self.environment,
+                ports=self.ports, detach=True, remove=False,
+            )
+            check = self.container.exec_run("bash -c 'id && pwd'")
+            print(check.output)
+        except Exception as e:
+            print(f"[-] Failed to start container: {e}")
+            raise
 
     def cleanup(self):
-        if self.container:
+        if hasattr(self, 'container') and self.container:
             try:
                 self.container.stop(timeout=5)
             except Exception:
                 pass
 
     def __del__(self):
-        self.cleanup()
+        try:
+            self.cleanup()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     # Main Entry Point: The 100-line Baby Runtime in Action
@@ -109,7 +125,15 @@ import sys
 # Ensure logs directory exists even if toolset import fails
 workspace_dir = os.getenv("WORKSPACE_DIR", "/home/ubuntu/Workspace")
 logs_dir = os.path.join(workspace_dir, "logs")
+print(f"[LOGGER] Creating logs directory: {{logs_dir}}", file=sys.stderr)
 os.makedirs(logs_dir, exist_ok=True)
+
+# Verify directory was created
+if os.path.exists(logs_dir):
+    print(f"[LOGGER] Logs directory created successfully: {{logs_dir}}", file=sys.stderr)
+else:
+    print(f"[LOGGER] ERROR: Failed to create logs directory: {{logs_dir}}", file=sys.stderr)
+    sys.exit(1)
 
 # Try to import toolset and initialize logger
 try:
@@ -118,18 +142,32 @@ try:
     _ = toolset.logger
     toolset.logger.set_initial_prompt({task!r})
     log_path = toolset.logger.get_filepath()
-    print(f"[LOGGER] Initialized, log file: {{log_path}}")
+    print(f"[LOGGER] Initialized, log file: {{log_path}}", file=sys.stderr)
 except Exception as e:
     print(f"[LOGGER] Warning: Failed to initialize logger: {{e}}", file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
     # Directory already created above as fallback
 """
-    result = ctfer.container.exec_run(
-        ["python", "-c", init_script],
-        workdir="/home/ubuntu/Workspace",
-    )
-    if result.exit_code != 0:
+    # Try python3 first, fallback to python
+    logger_init_success = False
+    for python_cmd in ["python3", "python"]:
+        result = ctfer.container.exec_run(
+            [python_cmd, "-c", init_script],
+            workdir="/home/ubuntu/Workspace",
+            environment={"WORKSPACE_DIR": "/home/ubuntu/Workspace"},  # Explicitly set env
+        )
         output = result.output.decode('utf-8', errors='replace')
-        print(f"[!] Logger init warning: {output}")
+        if result.exit_code == 0:
+            if output:
+                print(f"[+] Logger init output: {output}")
+            logger_init_success = True
+            break
+        else:
+            print(f"[!] Logger init failed with {python_cmd}: {output}")
+            if python_cmd == "python":
+                # Both failed, show error
+                print("[!] Failed to initialize logger with both python3 and python")
 
     print(ctfer.container.logs().decode('utf-8'))
     #res = ctfer.container.exec_run(["claude", "--dangerously-skip-permissions", "--print", task], workdir="/home/ubuntu/Workspace")
