@@ -103,14 +103,33 @@ if __name__ == "__main__":
     print(f"[+] 输入提示词：{task}")
 
     # Initialize structured log inside sandbox before starting Claude
-    init_script = f"""
-import toolset
-toolset.logger.set_initial_prompt({task!r})
+    init_script = f"""import os
+import sys
+
+# Ensure logs directory exists even if toolset import fails
+workspace_dir = os.getenv("WORKSPACE_DIR", "/home/ubuntu/Workspace")
+logs_dir = os.path.join(workspace_dir, "logs")
+os.makedirs(logs_dir, exist_ok=True)
+
+# Try to import toolset and initialize logger
+try:
+    import toolset
+    # Explicitly access logger to trigger initialization
+    _ = toolset.logger
+    toolset.logger.set_initial_prompt({task!r})
+    log_path = toolset.logger.get_filepath()
+    print(f"[LOGGER] Initialized, log file: {{log_path}}")
+except Exception as e:
+    print(f"[LOGGER] Warning: Failed to initialize logger: {{e}}", file=sys.stderr)
+    # Directory already created above as fallback
 """
-    ctfer.container.exec_run(
+    result = ctfer.container.exec_run(
         ["python", "-c", init_script],
         workdir="/home/ubuntu/Workspace",
     )
+    if result.exit_code != 0:
+        output = result.output.decode('utf-8', errors='replace')
+        print(f"[!] Logger init warning: {output}")
 
     print(ctfer.container.logs().decode('utf-8'))
     #res = ctfer.container.exec_run(["claude", "--dangerously-skip-permissions", "--print", task], workdir="/home/ubuntu/Workspace")
