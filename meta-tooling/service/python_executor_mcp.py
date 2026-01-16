@@ -113,12 +113,45 @@ class PythonExecutor:
 # Auto-injected logging code (runs in container's Python environment)
 try:
     import toolset
-    if hasattr(toolset, 'logger'):
-        import json
+    import sys
+    import os
+    import json
+    
+    # Debug: check if logger exists
+    has_logger = hasattr(toolset, 'logger')
+    logger_value = getattr(toolset, 'logger', None)
+    
+    # Write debug info to file
+    debug_path = os.path.join(os.getenv("WORKSPACE_DIR", "/home/ubuntu/Workspace"), ".cursor", "debug.log")
+    os.makedirs(os.path.dirname(debug_path), exist_ok=True)
+    try:
+        with open(debug_path, "a") as f:
+            f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"python_executor_mcp.py:injection","message":"code injection executed","data":{{"has_logger":has_logger,"logger_type":str(type(logger_value)) if logger_value else "None","logger_is_none":logger_value is None}}}}) + "\\n")
+    except: pass
+    
+    if has_logger and logger_value is not None:
         code_to_log = json.loads({json.dumps(code_escaped)})
         toolset.logger.log_code(code_to_log)
-except Exception:
-    pass  # Logger not available or failed, continue anyway
+        # Debug: confirm logging succeeded
+        try:
+            with open(debug_path, "a") as f:
+                f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"python_executor_mcp.py:injection","message":"log_code called","data":{{"code_length":len(code_to_log)}}}}) + "\\n")
+        except: pass
+    else:
+        # Debug: logger not available
+        try:
+            with open(debug_path, "a") as f:
+                f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"python_executor_mcp.py:injection","message":"logger not available","data":{{"has_logger":has_logger,"logger_value":str(logger_value)}}}}) + "\\n")
+        except: pass
+except Exception as e:
+    # Debug: log exception
+    try:
+        import os, json
+        debug_path = os.path.join(os.getenv("WORKSPACE_DIR", "/home/ubuntu/Workspace"), ".cursor", "debug.log")
+        os.makedirs(os.path.dirname(debug_path), exist_ok=True)
+        with open(debug_path, "a") as f:
+            f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"python_executor_mcp.py:injection","message":"logging injection failed","data":{{"error":str(e),"error_type":type(e).__name__}}}}) + "\\n")
+    except: pass
 
 """
         # Prepend logging injection to user code
