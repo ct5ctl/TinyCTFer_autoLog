@@ -183,18 +183,63 @@ else:
     print(f"[LOGGER] ERROR: Failed to create logs directory: {{logs_dir}}", file=sys.stderr)
     sys.exit(1)
 
+# Debug: setup debug logging first
+debug_path = os.path.join(workspace_dir, ".cursor", "debug.log")
+os.makedirs(os.path.dirname(debug_path), exist_ok=True)
+import json
+try:
+    with open(debug_path, "a") as f:
+        f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"INIT","location":"tinyctfer.py:init_script","message":"init script start","data":{{"python_path":sys.path,"workspace_dir":workspace_dir}}}}) + "\\n")
+except: pass
+
 # Try to import toolset and initialize logger
 try:
     import toolset
-    # Explicitly access logger to trigger initialization
-    _ = toolset.logger
-    toolset.logger.set_initial_prompt({task!r})
-    log_path = toolset.logger.get_filepath()
-    print(f"[LOGGER] Initialized, log file: {{log_path}}", file=sys.stderr)
+    import json
+    
+    # Debug: write toolset info
+    try:
+        with open(debug_path, "a") as f:
+            toolset_attrs = [attr for attr in dir(toolset) if not attr.startswith('_')]
+            f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"INIT","location":"tinyctfer.py:init_script","message":"toolset imported","data":{{"toolset_attrs":toolset_attrs,"has_logger_attr":hasattr(toolset, 'logger'),"toolset_file":getattr(toolset, '__file__', 'NO_FILE')}}}}) + "\\n")
+    except Exception as debug_e:
+        print(f"[DEBUG] Failed to write debug log: {{debug_e}}", file=sys.stderr)
+    
+    # Check if logger exists
+    if hasattr(toolset, 'logger'):
+        logger_obj = toolset.logger
+        if logger_obj is not None:
+            logger_obj.set_initial_prompt({task!r})
+            log_path = logger_obj.get_filepath()
+            print(f"[LOGGER] Initialized, log file: {{log_path}}", file=sys.stderr)
+            # Debug: confirm success
+            try:
+                with open(debug_path, "a") as f:
+                    f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"INIT","location":"tinyctfer.py:init_script","message":"logger initialized","data":{{"log_path":log_path}}}}) + "\\n")
+            except: pass
+        else:
+            print(f"[LOGGER] Warning: toolset.logger is None", file=sys.stderr)
+            try:
+                with open(debug_path, "a") as f:
+                    f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"INIT","location":"tinyctfer.py:init_script","message":"logger is None","data":{{}}}}) + "\\n")
+            except: pass
+    else:
+        print(f"[LOGGER] Warning: toolset has no 'logger' attribute", file=sys.stderr)
+        toolset_attrs = [attr for attr in dir(toolset) if not attr.startswith('_')]
+        print(f"[LOGGER] toolset attributes: {{toolset_attrs}}", file=sys.stderr)
+        try:
+            with open(debug_path, "a") as f:
+                f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"INIT","location":"tinyctfer.py:init_script","message":"logger attribute missing","data":{{"toolset_attrs":toolset_attrs,"toolset_file":getattr(toolset, '__file__', 'NO_FILE')}}}}) + "\\n")
+        except: pass
 except Exception as e:
     print(f"[LOGGER] Warning: Failed to initialize logger: {{e}}", file=sys.stderr)
     import traceback
     traceback.print_exc(file=sys.stderr)
+    # Debug: log exception
+    try:
+        with open(debug_path, "a") as f:
+            f.write(json.dumps({{"sessionId":"debug-session","runId":"run1","hypothesisId":"INIT","location":"tinyctfer.py:init_script","message":"exception during init","data":{{"error":str(e),"error_type":type(e).__name__,"traceback":traceback.format_exc()}}}}) + "\\n")
+    except: pass
     # Directory already created above as fallback
 """
     # Try python3 first, fallback to python
