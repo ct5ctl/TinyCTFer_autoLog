@@ -38,6 +38,8 @@ class Ctfer:
             f"{SCRIPT_DIR/'claude_code'}:/opt/claude_code:ro",  # Claude config (ro)
             f"{workspace}:/home/ubuntu/Workspace",  # AI's workspace (rw)
             f"{SCRIPT_DIR}/entrypoint.sh:/entrypoint.sh:ro",  # Claude config (ro)
+            f"{SCRIPT_DIR/'meta-tooling'/'toolset'/'src'}:/opt/toolset/src:ro",  # Toolset overrides (ro)
+            f"{SCRIPT_DIR/'meta-tooling'/'service'}:/opt/service:ro",  # MCP service overrides (ro)
         ]
         self.environment = {  # Anthropic API credentials
             "ANTHROPIC_BASE_URL": os.getenv("ANTHROPIC_BASE_URL"),
